@@ -1,0 +1,42 @@
+stages:
+  - deploy_to_gitlab_registry_dev
+  - deploy_from_gitlab_to_rancher_dev
+  - deploy_to_gitlab_release
+
+deploy_to_gitlab_registry_dev:
+  before_script:
+    - docker login registry.gitlab.com -u $USER_DOCKER -p $PASSWORD_DOCKER
+    - git submodule init
+    - git submodule update
+  stage: deploy_to_gitlab_registry_dev
+  image: docker:stable-git
+  services:
+    - docker:dind
+  script:
+    - docker build -f devops/docker/pro.Dockerfile . -t $URL_REGISTRY_CORE:DEV && docker push $URL_REGISTRY_CORE:DEV
+  only:
+    - master
+
+deploy_from_gitlab_to_rancher_dev:
+  stage: deploy_from_gitlab_to_rancher_dev
+  image: kpolszewski/rancher2-gitlab-deploy
+  script:
+    - upgrade --rancher-url $RANCHER_URL --rancher-key $RANCHER_ACCESS_KEY --rancher-secret $RANCHER_SECRET_KEY --cluster $CLUSTER_RANCHER --environment $PROJECT_RANCHER  --stack $NAMESPACE_RANCHER --service $WORKLOAD_RANCHER --new-image $URL_REGISTRY_CORE:DEV
+  only:
+    - master
+
+deploy_to_gitlab_release:
+  before_script:
+    - docker login registry.gitlab.com -u $USER_DOCKER -p $PASSWORD_DOCKER
+    - git submodule init
+    - git submodule update
+    - export TAG=$(awk -F'\"' '/\"version\"'\:' \".+\"/{ print $4; exit; }' ./package.json)
+    - echo $TAG
+  stage: deploy_to_gitlab_release
+  image: docker:stable-git
+  services:
+    - docker:dind
+  script:
+    - docker build -f devops/docker/pro.Dockerfile . -t $URL_REGISTRY_CORE:$TAG && docker push $URL_REGISTRY_CORE:$TAG
+  only:
+    - tags
